@@ -1,9 +1,9 @@
-// AVX512 SSr — Miner Keccak cepat untuk pencarian baton PodMint.
+// AVX512 SSr — Miner Keccak-256 paralel cepat untuk pencarian nonce.
 // File ini adalah bagian dari produk AVX512 SSr.
 //
-// avx512_miner.c — Miner baton PodMint PRODUKSI (AVX512 8-way Keccak-256).
+// avx512_miner.c — Miner PRODUKSI (AVX512 8-way Keccak-256).
 //
-// Menggantikan solver scalar tail_solver/range_solver untuk pencarian baton.
+// Pengganti yang lebih cepat untuk solver skalar pada pencarian nonce.
 // Core permutasi Keccak-f1600 AVX512 disalin verbatim dari harness test
 // ~/workspace/pod/avx512_test.c (terbukti benar: 24/24 lane cocok dengan
 // keccak Python). Yang baru di sini adalah bungkus pencariannya:
@@ -16,7 +16,7 @@
 //
 // FORMAT (TIDAK BOLEH DILANGGAR): pesan = prefix ASCII + nonce desimal ASCII.
 // Byte order little-endian per word 8 byte, TANPA byte-swap. Konvensi
-// bswap64/lane-7 miner HashOre TIDAK berlaku untuk PodMint.
+// Konvensi byte-swap lain tidak berlaku di sini.
 //
 // Usage:
 //   ./avx512_miner "<prefix>" <bits> <start> <end> [threads]
@@ -27,7 +27,7 @@
 // Ketemu -> stdout: {"nonce": "...", "hash": "0x..."} dan exit 0.
 // Tidak ketemu -> stderr saja, exit 1. Progress/checkpoint -> stderr/file.
 // Murni komputasi lokal: tidak ada jaringan, tidak ada wallet, tidak ada
-// submit apa pun ke PodMint.
+// pengiriman hasil ke pihak mana pun.
 #include <immintrin.h>
 #include <stdio.h>
 #include <stdlib.h>

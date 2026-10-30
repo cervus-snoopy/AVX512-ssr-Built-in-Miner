@@ -3,7 +3,7 @@
 
 Pemakaian:
     python3 verify.py
-        Memeriksa vektor bawaan (prefix cst ronde 8 PodMint).
+        Memeriksa vektor contoh bawaan.
     python3 verify.py <prefix> <nonce> <expected_hash>
         Memeriksa satu vektor bebas.
 
@@ -32,23 +32,20 @@ def leading_zero_bits(hex_hash: str) -> int:
     return 256 - n.bit_length()
 
 
-CST_PREFIX = (
-    "0xda38ef5e441109952b33f0b21832ba90954d4fb3441b3af43c3a00ed2dd72635"
-    ":2:108:1274790506:0xdd5ea07068a3fe6029e116603fbb890e9df845e3:"
-)
+EXAMPLE_PREFIX = "AVX512-SSr-example:"
 
 VECTORS = [
     (
-        "vektor 1 (cst + 1234567890)",
-        CST_PREFIX,
-        "1234567890",
-        "0xea31438faa4527573d6136dc2c273f6c0951c6e70ce275f30fd069973471fa24",
+        "vektor 1 (contoh + 0)",
+        EXAMPLE_PREFIX,
+        "0",
+        "0xb93b2eb109bcea2d1fe94f8293f3df069759b1c5d188ce04e305432f9769cc27",
     ),
     (
-        "vektor 3 (baton cst beneran, ronde 8)",
-        CST_PREFIX,
-        "34954707736",
-        "0x000000001510c7ae33e2c2ea94a6b42b7fafa23f712aad00166cff42edc542c5",
+        "vektor 2 (contoh + 1234567890)",
+        EXAMPLE_PREFIX,
+        "1234567890",
+        "0x84c2d16be9e4fc2f409e30f4e6b6cba218e24076d3124d528bf37749d2c85e0c",
     ),
 ]
 

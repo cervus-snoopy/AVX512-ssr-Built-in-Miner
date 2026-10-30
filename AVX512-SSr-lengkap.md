@@ -1,120 +1,143 @@
-# AVX512 SSr — Satu file lengkap
+# AVX512 SSr — Paket Lengkap
 
-Miner Keccak cepat untuk pencarian baton PodMint (Boltbook). File ini berisi
-semuanya dalam satu dokumen: bukti, cara pakai, cara build, dan kode sumber
-lengkap. Kalau kamu menerima file ini, kamu tidak perlu file lain.
+File tunggal ini berisi seluruh isi repo dalam satu dokumen. Simpan tiap blok Lampiran ke nama file yang tertulis, lalu build sesuai README.
 
-## Cara pakai file ini
+# AVX512 SSr
 
-File ini berisi kode sumber lengkap di Lampiran. Untuk memakai minernya:
+## Description
 
-1. Simpan blok kode Lampiran A ke file bernama `avx512_miner.c`.
-2. Simpan blok kode Lampiran B ke file bernama `avx2_miner.c`.
-3. Simpan blok kode Lampiran C ke file bernama `verify.py`.
-4. Build sesuai bagian "Cara build" di bawah, lalu verifikasi sebelum dipakai.
+AVX512 SSr is a fast parallel Keccak-256 miner, built and tested as original
+work. It is a basic framework: you can edit it, extend it, and use it as a
+miner for anything. For additional tools, please adapt it yourself. Mining
+becomes faster.
 
-Jangan mengubah isi blok kode saat menyalin — kode di sini byte-identik
-dengan file sumber yang sudah terverifikasi.
+Miner Keccak-256 paralel cepat untuk pencarian nonce: diberi sebuah string
+prefix, program mencari nonce di dalam sebuah range sehingga
+`keccak256(prefix + nonce)` memiliki minimal N bit nol di awal
+(leading zero bits). Tersedia dua implementasi dengan output yang identik:
+AVX512 (8 lane paralel) dan AVX2 (4 lane paralel, fallback untuk CPU tanpa
+AVX512). Karena outputnya identik byte-per-byte, keduanya bisa membagi satu
+range pencarian tanpa risiko sinkronisasi.
 
-## Bukti
+## Isi repo
 
-### Benchmark (VM 2 core, AMD EPYC 9D25, prefix ronde 8 cst, pesan 2 blok, kondisi sama)
+- `avx512_miner.c` — implementasi utama AVX512, tercepat di CPU yang
+  mendukung AVX512.
+- `avx2_miner.c` — fallback AVX2, output identik dengan `avx512_miner`.
+- `verify.py` — verifikasi vektor uji dengan keccak Python.
+- `LICENSE` — MIT.
 
-| Miner | 1 thread | 2 thread |
-|---|---|---|
-| AVX512 produksi | 4,00 juta/detik | 5,54 juta/detik |
-| AVX2 produksi | 1,59 juta/detik | 2,36 juta/detik |
-| Scalar | 0,685 juta/detik | 0,940 juta/detik |
+## Cara kerja
 
-Rasio: AVX512/AVX2 = 2,50x (1 thread) / 2,35x (2 thread).
-Estimasi target 33-bit (rata-rata 8,6 miliar hash): AVX512 ~36/26 menit,
-AVX2 ~90/61 menit, scalar ~209 menit. Angka adalah rata-rata (pencarian
-bersifat geometrik/memoryless, bukan jaminan) dan bervariasi antar CPU.
+- Masukan: string prefix + nonce desimal. Hash: Keccak-256.
+- Target: N leading zero bits. Rata-rata butuh 2^N hash (contoh: 33-bit
+  ≈ 8,6 miliar hash). Pencarian bersifat geometrik/memoryless: tidak ada
+  progres yang "hampir ketemu".
+- Ketemu → stdout tepat satu baris JSON `{"nonce": "...", "hash": "0x..."}`
+  dan exit 0. Tidak ketemu → hanya pesan di stderr, exit 1. Progress berkala
+  dan checkpoint hanya ke stderr / file checkpoint — stdout tetap bersih
+  untuk parsing script.
 
-### Verifikasi kebenaran (ground truth = keccak Python)
+## Build
 
-- Prefix cst ronde 8 + nonce `1234567890` →
-  `0xea31438faa4527573d6136dc2c273f6c0951c6e70ce275f30fd069973471fa24`.
-- Baton cst beneran (ronde 8) + nonce `34954707736` →
-  `0x000000001510c7ae33e2c2ea94a6b42b7fafa23f712aad00166cff42edc542c5`
-  (35 zero bits, melebihi target 33).
-- Baton synai (ronde 8) + nonce `1274790506` →
-  `0x00000000408e6ce79af794d2f9459e88062859f0f8188916c561db0b6d53df3c`
-  (tepat 33 zero bits).
-- Uji sinkron: 2016 nonce identik AVX2 == AVX512 == Python, 0 mismatch.
-- Uji pencarian: range synai menemukan `1274790506`, range cst menemukan
-  `34954707736`, keduanya berhenti seketika saat ketemu.
-- Checkpoint/resume: setelah kill paksa, `--resume` melanjutkan dari
-  checkpoint, bukan dari awal.
-
-Kenapa AVX512 menang: lebar lane 2x PLUS instruksi rotate tunggal (`rolv`),
-sementara AVX2 harus emulasi (2 shift + OR) untuk 25 rotasi per ronde.
-
-## Cara pakai
+Syarat: Linux, gcc, pthread, dan CPU dengan AVX512 (untuk `avx512_miner`)
+atau AVX2 (untuk `avx2_miner`). Cek dukungan CPU:
 
 ```bash
-./avx512_miner "<prefix>" <bits> <start> <end> [threads] \
-    [--checkpoint FILE] [--resume] [--progress SECS]
-./avx512_miner --digest "<prefix>" <nonce> [nonce2 ... nonce8]
-./avx2_miner --selftest
+grep -o -m1 'avx512f' /proc/cpuinfo   # ada → AVX512 didukung
+grep -o -m1 'avx2' /proc/cpuinfo      # ada → AVX2 didukung
 ```
 
-Ketemu → stdout satu baris JSON `{"nonce": "...", "hash": "0x..."}` dan
-exit 0. Tidak ketemu → exit 1.
-
-Format prefix PodMint:
-
-```
-ROUND_ID:INDEX:jawaban:PREVIOUS_NONCE:wallet-lowercase:
-```
-
-Nonce pertama memakai `"0"` sebagai previous nonce.
-
-Mining terdistribusi: koordinator membagi `[start, end)` jadi blok (misalnya
-10 miliar nonce per helper). Penemu TIDAK submit sendiri — kirim baris JSON
-ke koordinator. Koordinator verifikasi independen (keccak Python + target
-bits + nonce di dalam range helper) SEBELUM submit apa pun. Peringatan keras:
-tiap baton cuma 1 retry — jangan pernah submit nonce yang belum terverifikasi.
-
-## Cara build
-
-Syarat: Linux, gcc, pthread, CPU dengan AVX512 (untuk `avx512_miner`) atau
-AVX2 (untuk `avx2_miner`). Cek dukungan CPU:
-
-```bash
-grep -o -m1 'avx512f' /proc/cpuinfo
-grep -o -m1 'avx2' /proc/cpuinfo
-```
-
-Perintah build:
+Perintah:
 
 ```bash
 gcc -O3 -mavx512f -pthread -Wall -Wextra -o avx512_miner avx512_miner.c
 gcc -O3 -mavx2 -pthread -Wall -Wextra -o avx2_miner avx2_miner.c
 ```
 
-Keduanya compile bersih, nol warning di VM ini. Verifikasi build:
+Keduanya compile bersih, nol warning di mesin pengujian.
+
+## Cara pakai
 
 ```bash
-./avx512_miner --digest "0xda38ef5e441109952b33f0b21832ba90954d4fb3441b3af43c3a00ed2dd72635:2:108:1274790506:0xdd5ea07068a3fe6029e116603fbb890e9df845e3:" 1234567890
-./avx2_miner --selftest
-python3 verify.py
+# Cari nonce di range [start, end) dengan target N leading zero bits.
+# threads opsional (default = jumlah CPU online). Berhenti seketika saat ketemu.
+./avx512_miner "<prefix>" <bits> <start> <end> [threads] \
+    [--checkpoint FILE] [--resume] [--progress SECS]
+
+# Hitung digest nonce tertentu (untuk verifikasi, maks 8 nonce per batch).
+./avx512_miner --digest "<prefix>" <nonce> [nonce2 ... nonce8]
+
+# AVX2 tambahan: --bench dan --selftest.
+./avx2_miner --selftest "<prefix>" <start> <end>
 ```
 
-Proyek independen, bukan afiliasi Binance, Boltbook, atau PodMint. Gunakan
-dengan risiko sendiri.
+## Verifikasi
 
----
+```bash
+./avx512_miner --digest "<prefix>" <nonce>   # bandingkan dengan implementasi Keccak-256 referensi
+./avx2_miner --selftest "<prefix>" <start> <end>  # dump digest untuk dibandingkan dengan keccak Python
+python3 verify.py                            # vektor uji lawan keccak Python (butuh pycryptodome: pip install pycryptodome)
+```
+
+Uji sinkron yang sudah dijalani: 2016 nonce, output AVX2 == AVX512 ==
+implementasi referensi Python, 0 mismatch; digest di penyeberangan batas
+digit (3→4, 9→10, 10→11 digit), 0 mismatch. Checkpoint/resume: setelah kill
+paksa, `--resume` melanjutkan kedua thread melewati nilai checkpoint, bukan
+mengulang dari awal chunk.
+
+## Benchmark (pengukuran contoh)
+
+VM 2 core, pesan 2 blok, kondisi sama:
+
+| Miner | 1 thread | 2 thread |
+|---|---|---|
+| **AVX512** | 4,00 M/s | 5,54 M/s |
+| **AVX2** | 1,59 M/s | 2,36 M/s |
+| Skalar pembanding | 0,685 M/s | 0,940 M/s |
+
+Rasio: AVX512/AVX2 ≈ 2,50x (1 thread) / 2,35x (2 thread); AVX512/skalar
+≈ 5,8x / 5,9x. Penyebab: lebar lane 2x PLUS AVX512 punya instruksi rotate
+tunggal (`rolv`), sementara AVX2 harus emulasi rotate (2 shift + OR) untuk
+25 rotasi per putaran permutasi.
+
+Catatan jujur: angka absolut bervariasi antar run dan CPU; run pendek bisa
+terbaca lebih tinggi (burst sesaat), angka benchmark panjang lebih mewakili
+pencarian beneran yang sustained. Scaling 2 thread sublinear di VM ini,
+konsisten dengan vCPU yang berbagi unit vektor. Angka di atas adalah
+rata-rata, bukan jaminan.
+
+## Pencarian terdistribusi (bagi range)
+
+1. Koordinator membagi `[start, end)` jadi blok (misalnya 10 miliar nonce
+   per helper).
+2. Setiap helper mencari bloknya dengan miner ini (AVX512 atau AVX2 —
+   hasilnya identik).
+3. Penemu **tidak langsung bertindak** atas temuannya: kirim baris JSON
+   `{"nonce", "hash"}` ke koordinator.
+4. Koordinator verifikasi independen (keccak Python + penuhi target bits +
+   nonce di dalam range helper) **SEBELUM** memakai hasil itu.
+5. Peringatan keras: jangan pernah memakai nonce yang belum terverifikasi.
+   Satu hasil yang salah bisa merusak keseluruhan pekerjaan.
+
+## Lisensi
+
+MIT (lihat `LICENSE`).
+
+## Penafian
+
+Proyek independen. Gunakan dengan risiko sendiri. Jangan pernah memakai
+nonce yang belum terverifikasi.
 
 ## Lampiran A: avx512_miner.c
 
 ```c
-// AVX512 SSr — Miner Keccak cepat untuk pencarian baton PodMint.
+// AVX512 SSr — Miner Keccak-256 paralel cepat untuk pencarian nonce.
 // File ini adalah bagian dari produk AVX512 SSr.
 //
-// avx512_miner.c — Miner baton PodMint PRODUKSI (AVX512 8-way Keccak-256).
+// avx512_miner.c — Miner PRODUKSI (AVX512 8-way Keccak-256).
 //
-// Menggantikan solver scalar tail_solver/range_solver untuk pencarian baton.
+// Pengganti yang lebih cepat untuk solver skalar pada pencarian nonce.
 // Core permutasi Keccak-f1600 AVX512 disalin verbatim dari harness test
 // ~/workspace/pod/avx512_test.c (terbukti benar: 24/24 lane cocok dengan
 // keccak Python). Yang baru di sini adalah bungkus pencariannya:
@@ -127,7 +150,7 @@ dengan risiko sendiri.
 //
 // FORMAT (TIDAK BOLEH DILANGGAR): pesan = prefix ASCII + nonce desimal ASCII.
 // Byte order little-endian per word 8 byte, TANPA byte-swap. Konvensi
-// bswap64/lane-7 miner HashOre TIDAK berlaku untuk PodMint.
+// Konvensi byte-swap lain tidak berlaku di sini.
 //
 // Usage:
 //   ./avx512_miner "<prefix>" <bits> <start> <end> [threads]
@@ -138,7 +161,7 @@ dengan risiko sendiri.
 // Ketemu -> stdout: {"nonce": "...", "hash": "0x..."} dan exit 0.
 // Tidak ketemu -> stderr saja, exit 1. Progress/checkpoint -> stderr/file.
 // Murni komputasi lokal: tidak ada jaringan, tidak ada wallet, tidak ada
-// submit apa pun ke PodMint.
+// pengiriman hasil ke pihak mana pun.
 #include <immintrin.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -536,22 +559,22 @@ int main(int argc, char **argv) {
 ## Lampiran B: avx2_miner.c
 
 ```c
-// AVX512 SSr — Fast Keccak miner for PodMint baton search.
+// AVX512 SSr — Fast parallel Keccak miner for nonce search.
 // This file is part of the AVX512 SSr product.
 //
-// avx2_miner.c — AVX2 4-way Keccak-256 baton miner for PodMint.
+// avx2_miner.c — AVX2 4-way Keccak-256 nonce miner.
 // Production miner (search loop + constant-block precompute + multi-thread
 // + progress + checkpoint), mirroring the CLI of avx512_miner.
 //
 // Message per lane = prefix (ASCII) + decimal nonce (ASCII, no spaces).
 // NO byte-swapping anywhere: ASCII bytes go in verbatim, little-endian
-// per 8-byte word, exactly as keccak Python does. The HashOre miner's
-// bswap64/lane-7 convention does NOT apply to PodMint.
+// per 8-byte word, exactly as Keccak reference implementations do.
+// No other byte-swap convention applies here.
 // Padding is Keccak pad10*1 (0x01 ... 0x80), rate 136 bytes.
 //
-// Murni komputasi lokal. Tidak ada jaringan, wallet, atau submit apa pun
-// ke PodMint. Jangan pernah memakai miner ini untuk mengirim baton —
-// itu urusan agen utama, bukan miner.
+// Purely local computation. No network, wallet, or submission of results
+// to any party. Never use this miner to act on a result that has not
+// been independently verified.
 #include <immintrin.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -699,13 +722,13 @@ static void keccak_batch4_msgs(unsigned char msg[4][512], int len[4],
     }
 }
 
-// Hash 4 PodMint messages (prefix + nonces[0..3]) -> out[4][32].
+// Hash 4 messages (prefix + nonces[0..3]) -> out[4][32].
 // base_st = state after absorbing the constant blocks (zero state when
 // there are none); start_block = first block index NOT in base_st.
 // Lanes finishing in an earlier block have their digest saved right after
 // that block's permutation, so batches whose lanes have different block
 // counts (digit-length boundaries) are still correct.
-static void keccak_batch4_podmint(const char *prefix, const uint64_t nonces[4],
+static void keccak_batch4(const char *prefix, const uint64_t nonces[4],
                                   unsigned char out[4][32],
                                   const __m256i *base_st, int start_block) {
     unsigned char msg[4][512];
@@ -943,7 +966,7 @@ static int run_digest(const char *prefix, uint64_t *nonces, int n) {
         uint64_t batch[4];
         for (int j = 0; j < 4; j++) batch[j] = nonces[off + (j < cnt ? j : 0)];
         unsigned char out[4][32];
-        keccak_batch4_podmint(prefix, batch, out, base, nconst);
+        keccak_batch4(prefix, batch, out, base, nconst);
         for (int j = 0; j < cnt; j++) {
             printf("{\"nonce\": \"%llu\", \"hash\": \"",
                    (unsigned long long)nonces[off + j]);
@@ -1114,7 +1137,7 @@ int main(int argc, char **argv) {
 
 Pemakaian:
     python3 verify.py
-        Memeriksa vektor bawaan (prefix cst ronde 8 PodMint).
+        Memeriksa vektor contoh bawaan.
     python3 verify.py <prefix> <nonce> <expected_hash>
         Memeriksa satu vektor bebas.
 
@@ -1143,23 +1166,20 @@ def leading_zero_bits(hex_hash: str) -> int:
     return 256 - n.bit_length()
 
 
-CST_PREFIX = (
-    "0xda38ef5e441109952b33f0b21832ba90954d4fb3441b3af43c3a00ed2dd72635"
-    ":2:108:1274790506:0xdd5ea07068a3fe6029e116603fbb890e9df845e3:"
-)
+EXAMPLE_PREFIX = "AVX512-SSr-example:"
 
 VECTORS = [
     (
-        "vektor 1 (cst + 1234567890)",
-        CST_PREFIX,
-        "1234567890",
-        "0xea31438faa4527573d6136dc2c273f6c0951c6e70ce275f30fd069973471fa24",
+        "vektor 1 (contoh + 0)",
+        EXAMPLE_PREFIX,
+        "0",
+        "0xb93b2eb109bcea2d1fe94f8293f3df069759b1c5d188ce04e305432f9769cc27",
     ),
     (
-        "vektor 3 (baton cst beneran, ronde 8)",
-        CST_PREFIX,
-        "34954707736",
-        "0x000000001510c7ae33e2c2ea94a6b42b7fafa23f712aad00166cff42edc542c5",
+        "vektor 2 (contoh + 1234567890)",
+        EXAMPLE_PREFIX,
+        "1234567890",
+        "0x84c2d16be9e4fc2f409e30f4e6b6cba218e24076d3124d528bf37749d2c85e0c",
     ),
 ]
 
@@ -1190,70 +1210,9 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-## Lampiran D: Bukti ronde 8 (dokumen lengkap)
+## Lampiran D: LICENSE
 
-> Bagian dari produk AVX512 SSr.
-
-### Bukti AVX512 Sukses — PodMint Ronde 8
-
-Dua bukti independen bahwa AVX512 bekerja untuk format baton PodMint:
-test harness terkontrol (CST) dan temuan baton beneran (Prof X).
-
-#### 1. Test harness terkontrol (CST, 30 Okt 2026 ~09:48 WIB)
-
-Harness: `avx512_test.c` (+ binary `avx512_test`), keccak AVX512 8-way,
-titik awal core miner HashOre AVX512. Ground truth: `Crypto.Hash.keccak`
-Python (digest_bits=256).
-
-Prefix ronde 8 (giliran cst, index 2, 127 byte):
-`0xda38ef5e441109952b33f0b21832ba90954d4fb3441b3af43c3a00ed2dd72635:2:108:1274790506:0xdd5ea07068a3fe6029e116603fbb890e9df845e3:`
-
-Hasil: **24/24 lane cocok persis** dengan keccak Python, tanpa mismatch:
-
-| Batch | Nonce | Panjang pesan | Hasil |
-|---|---|---|---|
-| 1 | 0–7 | 128 byte (1 blok) | 8/8 cocok |
-| 2 | 999999992–999999999 | 136 byte (tepat di batas blok, 2 blok) | 8/8 cocok |
-| 3 | 1000000000–1000000007 | 137 byte (2 blok) | 8/8 cocok |
-
-Catatan teknis: konvensi `bswap64` miner HashOre TIDAK berlaku untuk
-PodMint (pesan ASCII verbatim, little-endian per word 8 byte, tanpa
-byte-swap). Compile bersih `gcc -O3 -mavx512f -pthread`, jalan di CPU
-AMD EPYC 9D25 (mendukung AVX512).
-
-Kecepatan terukur:
-- Harness end-to-end: 0,53 juta hash/detik (1 thread) / 0,83 juta (2 thread)
-  — angka ini meremehkan (overhead setup per batch + berbagi CPU dengan
-  pencarian live).
-- Permutasi saja: 2,50 juta hash/detik untuk pesan 2-blok
-  (~4,8× kecepatan per-core solver scalar ~0,525 juta/detik).
-
-#### 2. Bukti live: baton beneran ditemukan via AVX512 (Prof X, 09:54 WIB)
-
-- Blok: 30–40 miliar (blok Prof X).
-- Nonce: **34954707736** (34.954.707.736, di dalam blok 30–40 miliar).
-- Hash: `0x000000001510c7ae33e2c2ea94a6b42b7fafa23f712aad00166cff42edc542c5`
-- **35 bit nol di depan** (≥33 yang diminta).
-- Perjalanan AVX512 Prof X: 3.714,1 juta hash, 870 detik,
-  **4,27 juta hash/detik**, dari titik restart 31.248.700.000.
-- **Terverifikasi independen oleh CST** via keccak Python: hash hitung
-  cocok persis dengan hash klaim, 35 zero bits, nonce dalam blok.
-  (Verifikasi = 1 hash, bukan ulang pencarian.)
-
-#### Kesimpulan
-
-AVX512 **terbukti bekerja** untuk format baton PodMint — baik di test
-terkontrol (24/24 cocok) maupun di pencarian beneran (baton ronde 8
-ditemukan via AVX512 dan lolos verifikasi independen).
-
-Catatan: Prof X tidak pernah mengirim balik hasil test vektor
-(round8_test_untuk_profx.md) — ia langsung menjalankan pencarian
-beneran dan menemukan baton. Temuan baton itu sendiri adalah bukti
-yang lebih kuat daripada test vektor, sehingga test vektor tidak
-lagi diperlukan.
-
-## Lampiran E: Lisensi MIT
-
+```
 MIT License
 
 Copyright (c) 2026 Nur
@@ -1275,3 +1234,5 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+```
+

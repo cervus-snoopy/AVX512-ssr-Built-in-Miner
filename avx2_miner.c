@@ -1,19 +1,19 @@
-// AVX512 SSr — Fast Keccak miner for PodMint baton search.
+// AVX512 SSr — Fast parallel Keccak miner for nonce search.
 // This file is part of the AVX512 SSr product.
 //
-// avx2_miner.c — AVX2 4-way Keccak-256 baton miner for PodMint.
+// avx2_miner.c — AVX2 4-way Keccak-256 nonce miner.
 // Production miner (search loop + constant-block precompute + multi-thread
 // + progress + checkpoint), mirroring the CLI of avx512_miner.
 //
 // Message per lane = prefix (ASCII) + decimal nonce (ASCII, no spaces).
 // NO byte-swapping anywhere: ASCII bytes go in verbatim, little-endian
-// per 8-byte word, exactly as keccak Python does. The HashOre miner's
-// bswap64/lane-7 convention does NOT apply to PodMint.
+// per 8-byte word, exactly as Keccak reference implementations do.
+// No other byte-swap convention applies here.
 // Padding is Keccak pad10*1 (0x01 ... 0x80), rate 136 bytes.
 //
-// Murni komputasi lokal. Tidak ada jaringan, wallet, atau submit apa pun
-// ke PodMint. Jangan pernah memakai miner ini untuk mengirim baton —
-// itu urusan agen utama, bukan miner.
+// Purely local computation. No network, wallet, or submission of results
+// to any party. Never use this miner to act on a result that has not
+// been independently verified.
 #include <immintrin.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -161,13 +161,13 @@ static void keccak_batch4_msgs(unsigned char msg[4][512], int len[4],
     }
 }
 
-// Hash 4 PodMint messages (prefix + nonces[0..3]) -> out[4][32].
+// Hash 4 messages (prefix + nonces[0..3]) -> out[4][32].
 // base_st = state after absorbing the constant blocks (zero state when
 // there are none); start_block = first block index NOT in base_st.
 // Lanes finishing in an earlier block have their digest saved right after
 // that block's permutation, so batches whose lanes have different block
 // counts (digit-length boundaries) are still correct.
-static void keccak_batch4_podmint(const char *prefix, const uint64_t nonces[4],
+static void keccak_batch4(const char *prefix, const uint64_t nonces[4],
                                   unsigned char out[4][32],
                                   const __m256i *base_st, int start_block) {
     unsigned char msg[4][512];
@@ -405,7 +405,7 @@ static int run_digest(const char *prefix, uint64_t *nonces, int n) {
         uint64_t batch[4];
         for (int j = 0; j < 4; j++) batch[j] = nonces[off + (j < cnt ? j : 0)];
         unsigned char out[4][32];
-        keccak_batch4_podmint(prefix, batch, out, base, nconst);
+        keccak_batch4(prefix, batch, out, base, nconst);
         for (int j = 0; j < cnt; j++) {
             printf("{\"nonce\": \"%llu\", \"hash\": \"",
                    (unsigned long long)nonces[off + j]);

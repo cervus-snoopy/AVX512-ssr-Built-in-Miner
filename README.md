@@ -1,5 +1,12 @@
 # AVX512 SSr
 
+## Description
+
+AVX512 SSr is a fast parallel Keccak-256 miner, built and tested as original
+work. It is a basic framework: you can edit it, extend it, and use it as a
+miner for anything. For additional tools, please adapt it yourself. Mining
+becomes faster.
+
 Miner Keccak-256 paralel cepat untuk pencarian nonce: diberi sebuah string
 prefix, program mencari nonce di dalam sebuah range sehingga
 `keccak256(prefix + nonce)` memiliki minimal N bit nol di awal
@@ -58,14 +65,14 @@ Keduanya compile bersih, nol warning di mesin pengujian.
 ./avx512_miner --digest "<prefix>" <nonce> [nonce2 ... nonce8]
 
 # AVX2 tambahan: --bench dan --selftest.
-./avx2_miner --selftest
+./avx2_miner --selftest "<prefix>" <start> <end>
 ```
 
 ## Verifikasi
 
 ```bash
 ./avx512_miner --digest "<prefix>" <nonce>   # bandingkan dengan implementasi Keccak-256 referensi
-./avx2_miner --selftest                      # 30 digest, 0 mismatch
+./avx2_miner --selftest "<prefix>" <start> <end>  # dump digest untuk dibandingkan dengan keccak Python
 python3 verify.py                            # vektor uji lawan keccak Python (butuh pycryptodome: pip install pycryptodome)
 ```
 
@@ -88,7 +95,7 @@ VM 2 core, pesan 2 blok, kondisi sama:
 Rasio: AVX512/AVX2 ≈ 2,50x (1 thread) / 2,35x (2 thread); AVX512/skalar
 ≈ 5,8x / 5,9x. Penyebab: lebar lane 2x PLUS AVX512 punya instruksi rotate
 tunggal (`rolv`), sementara AVX2 harus emulasi rotate (2 shift + OR) untuk
-25 rotasi per ronde.
+25 rotasi per putaran permutasi.
 
 Catatan jujur: angka absolut bervariasi antar run dan CPU; run pendek bisa
 terbaca lebih tinggi (burst sesaat), angka benchmark panjang lebih mewakili
