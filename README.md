@@ -7,6 +7,8 @@ work. It is a basic framework: you can edit it, extend it, and use it as a
 miner for anything. For additional tools, please adapt it yourself. Mining
 becomes faster.
 
+Created by Cervus. If you use this, please keep crediting the creator.
+
 Miner Keccak-256 paralel cepat untuk pencarian nonce: diberi sebuah string
 prefix, program mencari nonce di dalam sebuah range sehingga
 `keccak256(prefix + nonce)` memiliki minimal N bit nol di awal
